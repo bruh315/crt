@@ -3,6 +3,8 @@
 
 #define C__MEMSIZE_ 10 * 1024 * 1024
 
+//#define C_SUB void
+
 #ifndef CRT__VARS
 #define CRT__VARS
     char C__MEMORY_[C__MEMSIZE_];
@@ -56,39 +58,32 @@ extern char *c_realloc(char *const old_ptr, const unsigned int old_size, const u
 }
 
 extern void c_free(const char *const p) {
-    // TODO: implement c_free(const char *const p) {
-        //TODO: implement c_free(const char *const p) {
-            //TODO: implement c_free(const char *const p) {
-                //TODO: implement c_free(const char *const p) {
-                    //TODO: implement c_free(const char *const p) {
-                        //...
-                    //}
-                //}
-            //}
-        //}
-    //}
+    //Todo: Implement c_free(cosnt char *const p);
 }
 
-static int c_memcpy(char *const dest_buf, const char *const src_buf, const unsigned int dest_size, const unsigned int src_size) {
+static void c_strcpy(char *const dest_str, const char *const src_str, const unsigned int dest_size) {
     if (!dest_buf || !src_buf) return 0;
     unsigned int index;
-    for (index = dest_size > src_size ? src_size : dest_size - 1; index --> 0;) dest_buf[index] = src_buf[index];
+    const unsigned int n = dest_size < src_size ? dest_size : src_size;
+    for (index = 0; index < n; ++index) dest_buf[index] = src_buf[index];
     return 1;
 }
 
 static unsigned int c_strlen(const char *const str) {
     unsigned int len = 0;
     if (!str) return len;
-    while (str[len++]);
-    return --len;
+    while (str[len]) ++len;
+    return len;
 }
 
 static int c_strcpy(char *const dest_str, const char *const src_str, const unsigned int dest_size) {
     if (!dest_str || !src_str || !dest_size) return 0;
-    int len = (int)c_strlen(src_str);
-    // len at the very start is at the null terminator
-    for (len = len >= dest_size ? dest_size - 1 : dest_size; len >= 0; --len) dest_str[len] = src_str[len];
-    return 1; 
+    unsigned int len = (int)c_strlen(src_str);
+    unsigned int index;
+    const unsigned int n = dest_size < len ? dest_size - 1 : len;
+    for (index = 0; index < n; ++index) dest_str[index] = src_str[index];
+    dest_str[index] = '\0';
+    return n; 
 }
 
 static int c_strcat(char *const str1, const char *const str2, const unsigned int str1_size) {
@@ -102,7 +97,7 @@ static bool c_strcmp(const char *const s1, const char *const s2) {
     const unsigned int l1 = c_strlen(s1);
     const unsigned int l2 = c_strlen(s2); 
     if (l1 != l2) return false;
-    while (index < l1) if (s1[index] != s2[index]) return false;
+    while (index < l1) if (s1[index] != s2[index++]) return false;
     return true;
 }
 
@@ -125,24 +120,15 @@ typedef struct c_coroutine {
 static c_coroutine c_coroutine_make(const unsigned int stack_size, const int initial_state, void (*handler)(c_coroutine *)) {
     c_coroutine routine = {0};
     routine.stack = (int *) c_calloc(stack_size * sizeof(int));
-    c_silent_assert(routine.stack);
+    #ifdef ASSERTALL
+        #ifndef UNASSERT_C_COROUNTINE_MAKE
+            c_silent_assert(routine.stack);
+        #endif
+    #endif
     routine.stack_size = stack_size;
     routine.state = initial_state;
     routine.handler = handler;
     return routine;
-}
-
-static void c_srand(const int seed) 
-{
-    C__SEED_ = seed;
-}
-
-static int c_rand() 
-{
-    C__SEED_ ^= C__SEED_ >> 5;
-    C__SEED_ ^= C__SEED_ << 7;
-    C__SEED_ ^= C__SEED_ >> 12;
-    return C__SEED_;
 }
 
 #define c_coroutine_yield(routine, new_state) \
@@ -159,6 +145,21 @@ static void c_coroutine_schedule(c_coroutine *routines, unsigned int count) {
     for (index = 0; index < count; ++index) (routines[index]).handler(&(routines[index]));;
 }
 
+static void c_srand(const int seed) 
+{
+    C__SEED_ = seed ? seed : 1;
+}
+
+static int c_rand() 
+{
+    C__SEED_ = C__SEED_ ? C__SEED_ : 1;
+    C__SEED_ ^= C__SEED_ >> 5;
+    C__SEED_ ^= C__SEED_ << 7;
+    C__SEED_ ^= C__SEED_ >> 12;
+    return C__SEED_;
+}
+
+
 typedef struct {
     int *items;
     unsigned int count; // Items pushed
@@ -172,11 +173,19 @@ static c_da c_da_make() {
 
 static int c_da_append(c_da *const da, const int element) {
     if (!da) return 0;
+    int wn = 0;
     if (da->count >= da->capacity) {
-        if (da->capacity == 0) da->capacity = 20;
+        if (da->capacity == 0) {
+            da->capacity = 20;
+            wn = 1;
+        }
         else da->capacity *= 2;
         int *const p = (int *)c_realloc((char *)da->items, da->count * sizeof(int), da->capacity * sizeof(int));
-        if (!p) return 0;
+        if (!p) {
+            if (wn) da->capacity = 0;
+            else da->capacity /= 2;
+            return 0;
+        }
         da->items = p;
     }
     da->items[da->count++] = element;
@@ -233,5 +242,78 @@ static c_handle c_handle_load(void *const p) {
         (handle).ref = (void *)0;\
         (handle).is_valid = 0;\
     } while (0)
+
+typedef struct {
+    char *memory;
+    unsigned int count; // How much shit has been pushed
+    unsigned int capacity; // Memory allocated
+} c_block;
+
+static c_block c_block_allocate(const unsigned int size) {
+    #ifdef ASSERTALL
+        #ifndef UNASSERT_C_BLOCK_ALLOCATE
+            c_silent_assert(size);
+        #endif
+    #endif
+    c_block block;
+    block.memory = c_calloc(size);
+    #ifdef ASSERTALL
+        #ifndef UNASSERT_C_BLOCK_ALLOCATE
+            c_silent_assert(block.memory);
+        #endif
+    #endif
+    block.count = 0;
+    block.capacity = size;
+    return block;
+}
+
+static int c_block_write(c_block *const block, const char byte)
+{
+    if (!block || !block->memory) return 0;
+    if (block->count >= block->capacity) {
+        block->capacity *= 2;
+        char *p = c_realloc(block->memory, block->count, block->capacity);
+        if (!p) {
+            block->capacity /= 2;
+            return 0;
+        };
+        block->memory = p;
+    }
+    
+    block->memory[block->count++] = byte;
+}
+
+static int c_block_read(c_block *const block, const unsigned int index, char *const out) {
+    if (!block || !block->memory || index >= block->count) return 0;
+    *out = block->memory[index];
+    return 1;
+}
+
+static int c_sprintf(char *const out, const char *const format, void **args, const unsigned int out_size) {
+    if (!out || !format || !args || !out_size) return 0;
+    unsigned int fmt_cur;
+    unsigned int out_cur;
+    unsigned int arg_cur;
+    for (fmt_cur = 0, out_cur = 0, arg_cur = 0; format[fmt_cur] != '\0' && out_cur < out_size - 1;) {
+        if (format[fmt_cur] == '%') {
+            ++fmt_cur;
+            if (format[fmt_cur] == 's') {
+                unsigned int index = 0;
+                while (((char *)args[arg_cur])[index] != '\0' && out_cur < out_size - 1) out[out_cur++] = ((char *)args[arg_cur])[index++];
+                ++arg_cur;
+            } else if (format[fmt_cur] == 'c') {
+                if (out_cur < out_size - 2) out[out_cur++] = (char) args[arg_cur++];
+            } else if (format[fmt_cur] == 'x' && out_cur < out_size - 3) {
+                //out[out_cur++] 
+            }
+        } else out[out_cur++] = format[fmt_cur++];
+    }
+    out[out_cur] = '\0';
+    return out_cur;
+}
+
+static int c_abort() {
+    while(1);
+}
 
 #endif
